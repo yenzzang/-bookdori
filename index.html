@@ -6,8 +6,6 @@
 <title>책돌이 — 교환독서 릴레이</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Jua&family=Gowun+Dodum&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
   :root{
     --bg:#FFFFFF;
@@ -202,12 +200,6 @@
   .footer-actions{margin-top:40px; text-align:center;}
   .footer-actions a{font-size:11.5px; color:var(--ink-soft); cursor:pointer; text-decoration:underline; margin:0 8px;}
   .notice{font-size:11px; color:var(--ink-soft); margin-top:8px;}
-  .sync-status{
-    display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--ink-soft);
-    background:#FAF9FF; border:1px solid var(--border); padding:6px 10px; border-radius:20px;
-  }
-  .sync-status.ok{color:#1F8A5E; background:#EEFBF5;}
-  .sync-status.error{color:#B44A5B; background:#FFF0F2;}
 
   /* archive */
   #archiveSection{margin-top:40px;}
@@ -227,10 +219,7 @@
 <div class="wrap">
   <div class="brand">
     <h1>📖 책돌이</h1>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-      <div class="tag">교환독서 릴레이</div>
-      <div id="syncStatus" class="sync-status">☁️ Firebase 연결 확인 중…</div>
-    </div>
+    <div class="tag">교환독서 릴레이</div>
   </div>
 
   <!-- SETUP -->
@@ -243,7 +232,7 @@
       <div class="order-hint">🔁 교환 순서 (▲▼로 조정, 이 순서대로 책이 돌아요)</div>
       <ul class="order-list" id="orderList"></ul>
       <button class="btn" id="startBtn" style="margin-top:6px;">시작하기 ✨</button>
-      <div class="notice">※ Firebase에 저장되는 공용 데이터예요. 링크를 아는 사람은 내용을 볼 수 있어요.</div>
+      <div class="notice">※ 현재 사용중인 브라우저(기기)에 데이터가 안전하게 저장됩니다.</div>
     </div>
   </div>
 
@@ -264,121 +253,17 @@
 </div>
 
 <script>
-/*
- * Firebase 설정 안내
- * 1) Firebase 콘솔 → 프로젝트 설정 → 내 앱 → 웹 앱(</>)에서 설정값을 복사합니다.
- * 2) 아래 여섯 값을 실제 값으로 바꿉니다. Firebase 웹 설정값은 비밀번호가 아니므로
- *    GitHub Pages에 올려도 되지만, Firestore 보안 규칙은 반드시 함께 설정하세요.
- */
-const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-const FIREBASE_COLLECTION = 'bookRelay';
-let db = null;
-let config = null;
-let state = null;
-let archive = [];
-let nextSeasonNum = 1;
+let config = JSON.parse(localStorage.getItem('bookRelay_config')) || null;
+let state = JSON.parse(localStorage.getItem('bookRelay_state')) || null;
+let archive = JSON.parse(localStorage.getItem('bookRelay_archive')) || [];
+let nextSeasonNum = archive.length + 1;
+
 const DEFAULT_COLORS = ['#FF8FA3','#6FC3F7','#FFCB4C','#5FD3A3','#B49BFF','#FF9F6B','#8FD9E8','#C792EA'];
 
-function setSyncStatus(message, type){
-  const el = document.getElementById('syncStatus');
-  if(!el) return;
-  el.textContent = message;
-  el.className = 'sync-status' + (type ? ' '+type : '');
-}
-
-function isFirebaseConfigured(){
-  return FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY'
-    && FIREBASE_CONFIG.projectId !== 'YOUR_PROJECT_ID'
-    && FIREBASE_CONFIG.appId !== 'YOUR_APP_ID';
-}
-
-function initializeFirebase(){
-  if(!isFirebaseConfigured()){
-    setSyncStatus('⚙️ Firebase 설정을 입력해주세요', 'error');
-    return false;
-  }
-  try{
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.firestore();
-    setSyncStatus('☁️ Firebase 연결됨', 'ok');
-    return true;
-  }catch(e){
-    console.error('Firebase initialization failed', e);
-    setSyncStatus('⚠️ Firebase 초기화 실패', 'error');
-    return false;
-  }
-}
-
-function firebaseDoc(key){
-  return db.collection(FIREBASE_COLLECTION).doc(key);
-}
-
-function parseFirebaseDoc(snapshot, fallback){
-  if(!snapshot.exists) return fallback;
-  try{
-    const data = snapshot.data();
-    return data && data.value ? JSON.parse(data.value) : fallback;
-  }catch(e){
-    console.error('Firebase data parsing failed', e);
-    return fallback;
-  }
-}
-
-async function loadAll(){
-  if(!db){
-    render();
-    return;
-  }
-  try{
-    const snapshots = await Promise.all([
-      firebaseDoc('config').get(),
-      firebaseDoc('state').get(),
-      firebaseDoc('archive').get()
-    ]);
-    config = parseFirebaseDoc(snapshots[0], null);
-    state = parseFirebaseDoc(snapshots[1], null);
-    archive = parseFirebaseDoc(snapshots[2], []);
-    setSyncStatus('☁️ 마지막 동기화 ' + new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}), 'ok');
-  }catch(e){
-    console.error('loadAll failed', e);
-    setSyncStatus('⚠️ Firebase 읽기 실패', 'error');
-  }
-  if(!config && draftMembers.every(m=>!m.name && !m.book)){
-    nextSeasonNum = archive.length + 1;
-  }
-  render();
-}
-
-async function saveConfig(){
-  try{
-    await firebaseDoc('config').set({
-      value: JSON.stringify(config),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  }catch(e){ console.error('saveConfig failed', e); setSyncStatus('⚠️ 저장 실패', 'error'); }
-}
-async function saveState(){
-  try{
-    await firebaseDoc('state').set({
-      value: JSON.stringify(state),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  }catch(e){ console.error('saveState failed', e); setSyncStatus('⚠️ 저장 실패', 'error'); }
-}
-async function saveArchive(){
-  try{
-    await firebaseDoc('archive').set({
-      value: JSON.stringify(archive),
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    });
-  }catch(e){ console.error('saveArchive failed', e); setSyncStatus('⚠️ 저장 실패', 'error'); }
+function saveData(){
+  localStorage.setItem('bookRelay_config', JSON.stringify(config));
+  localStorage.setItem('bookRelay_state', JSON.stringify(state));
+  localStorage.setItem('bookRelay_archive', JSON.stringify(archive));
 }
 
 function nowStr(){
@@ -448,11 +333,7 @@ function moveOrder(i, dir){
   renderOrderList();
 }
 
-document.getElementById('startBtn').addEventListener('click', async ()=>{
-  if(!db){
-    alert('Firebase 설정을 먼저 입력해주세요. index.html 상단의 FIREBASE_CONFIG를 채우면 됩니다.');
-    return;
-  }
+document.getElementById('startBtn').addEventListener('click', ()=>{
   if(draftMembers.length < 2){ alert('최소 2명은 필요해요.'); return; }
   if(draftMembers.some(m=>!m.name.trim() || !m.book.trim())){
     alert('모든 멤버의 이름과 시작 책 제목을 입력해주세요.');
@@ -471,24 +352,19 @@ document.getElementById('startBtn').addEventListener('click', async ()=>{
     history: [{ts: nowStr(), text: `📚 ${nextSeasonNum}회차 모임이 시작되었습니다!`}]
   };
   config.books.forEach(b=> state.bookStatus[b.id] = 'idle');
+  saveData();
   render();
-  await saveConfig();
-  await saveState();
 });
 
-document.getElementById('resetLink').addEventListener('click', async ()=>{
+document.getElementById('resetLink').addEventListener('click', ()=>{
   if(!confirm('현재 시즌을 초기화할까요? (지난 기록은 보존돼요)')) return;
   config = null; state = null;
+  localStorage.removeItem('bookRelay_config');
+  localStorage.removeItem('bookRelay_state');
   draftMembers = [0,1,2,3,4].map(i=> freshMember(DEFAULT_COLORS[i]));
   draftOrder = draftMembers.map(m=>m.id);
   nextSeasonNum = archive.length + 1;
   render();
-  if(db){
-    await Promise.all([
-      firebaseDoc('config').delete().catch(()=>{}),
-      firebaseDoc('state').delete().catch(()=>{})
-    ]);
-  }
 });
 
 /* ---------------- MAIN SCREEN LOGIC ---------------- */
@@ -617,23 +493,17 @@ function renderFinished(){
   renderHistory();
 }
 
-async function startNewSeasonSetup(){
+function startNewSeasonSetup(){
   const seasonNum = state.seasonNum || (archive.length+1);
   archive.push({seasonNum, config, state, finishedAt: nowStr()});
-  await saveArchive();
-
+  
   draftMembers = config.members.map(m=> ({id:'m'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name:m.name, book:'', author:'', color:m.color}));
   draftOrder = draftMembers.map(m=>m.id);
   nextSeasonNum = seasonNum + 1;
 
   config = null; state = null;
+  saveData();
   render();
-  if(db){
-    await Promise.all([
-      firebaseDoc('config').delete().catch(()=>{}),
-      firebaseDoc('state').delete().catch(()=>{})
-    ]);
-  }
 }
 
 function renderArchive(){
@@ -677,7 +547,7 @@ function setStar(bookId, n){
   [...el.children].forEach(s=> s.classList.toggle('on', Number(s.dataset.n) <= n));
 }
 
-async function submitSend(bookId){
+function submitSend(bookId){
   const txt = document.getElementById('txt_'+bookId).value.trim();
   if(!txt){ alert('한줄평을 입력해주세요.'); return; }
   const b = config.books.find(x=>x.id===bookId);
@@ -685,30 +555,28 @@ async function submitSend(bookId){
   state.reviews.push({bookId, round: state.round, memberId: holder, text: txt, rating: draftStars[bookId]||0});
   state.bookStatus[bookId] = 'sent';
   state.history.push({ts: nowStr(), text: `${memberName(holder)}님이 "${b.title}"을(를) 다 읽고 ${memberName(nextHolderOf(b))}님에게 보냈어요.`});
+  saveData();
   render();
-  await saveState();
 }
 
-async function markReceived(bookId){
+function markReceived(bookId){
   const b = config.books.find(x=>x.id===bookId);
   const next = nextHolderOf(b);
   state.bookStatus[bookId] = 'received';
   state.history.push({ts: nowStr(), text: `${memberName(next)}님이 "${b.title}"을(를) 받았어요.`});
+  saveData();
   render();
-  await saveState();
 }
 
-async function advanceRound(){
+function advanceRound(){
   state.round += 1;
   config.books.forEach(b=> state.bookStatus[b.id] = 'idle');
   state.history.push({ts: nowStr(), text: `— ${state.round+1}회차 시작 —`});
+  saveData();
   render();
-  await saveState();
 }
 
-initializeFirebase();
-loadAll();
-setInterval(loadAll, 5000);
+render();
 </script>
 </body>
 </html>
