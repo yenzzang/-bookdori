@@ -522,53 +522,72 @@ function render(){
       </div>${arrow}`;
   }).join('');
 
-  const booksHtml = config.books.map(b=>{
-    const status = state.bookStatus[b.id];
-    const holder = holderOf(b);
-    const next = nextHolderOf(b);
-    const myReviews = state.reviews.filter(r=>r.bookId===b.id).sort((a,c)=>a.round-c.round);
-    const ownerColor = memberColor(b.ownerId);
+  const peopleHtml = config.order.map(pid=>{
+    const outBook = config.books.find(b=>holderOf(b)===pid);
+    const inBook = config.books.find(b=>nextHolderOf(b)===pid);
+    const outStatus = state.bookStatus[outBook.id];
+    const inStatus = inBook ? state.bookStatus[inBook.id] : null;
+    const pColor = memberColor(pid);
 
-    let actionHtml = '';
-    if(status === 'idle'){
-      actionHtml = `
-        <button class="btn small mint" onclick="openReview('${b.id}')">다 읽었어요, 보내기 📮</button>
-        <div id="revform_${b.id}" style="display:none; margin-top:8px;" class="review-box">
-          <select id="who_${b.id}" style="width:100%; font-family:'Gowun Dodum',sans-serif; font-size:13px; padding:9px 10px; border:1.5px solid var(--border); border-radius:12px; background:#FBFBFE; color:var(--ink); margin-bottom:8px;">
-            ${config.members.map(m=>`<option value="${m.id}" ${m.id===holder?'selected':''}>${m.name}</option>`).join('')}
-          </select>
-          <div class="stars" id="stars_${b.id}">${[1,2,3,4,5].map(n=>`<span data-n="${n}" onclick="setStar('${b.id}',${n})">★</span>`).join('')}</div>
-          <textarea id="txt_${b.id}" placeholder="한줄평을 남겨주세요 (🔒 시즌 종료 전까지는 비공개예요)"></textarea>
-          <button class="btn small pink" style="margin-top:6px;" onclick="submitSend('${b.id}')">한줄평 남기고 보내기 →</button>
+    let out = '';
+    if(outStatus === 'idle'){
+      out = `
+        <div class="owner-tag" style="color:${pColor};">📕 지금 읽는 중 · 책지기 ${memberName(outBook.ownerId)}</div>
+        <h3>${outBook.title}</h3>
+        ${outBook.author ? `<div class="author">${outBook.author}</div>` : ''}
+        <button class="btn small mint" style="margin-top:4px;" onclick="openReview('${outBook.id}')">다 읽었어요, 보내기 📮</button>
+        <div id="revform_${outBook.id}" style="display:none; margin-top:8px;" class="review-box">
+          <div class="stars" id="stars_${outBook.id}">${[1,2,3,4,5].map(n=>`<span data-n="${n}" onclick="setStar('${outBook.id}',${n})">★</span>`).join('')}</div>
+          <textarea id="txt_${outBook.id}" placeholder="한줄평을 남겨주세요 (🔒 시즌 종료 전까지는 비공개예요)"></textarea>
+          <button class="btn small pink" style="margin-top:6px;" onclick="submitSend('${outBook.id}','${pid}')">한줄평 남기고 보내기 →</button>
         </div>`;
-    } else if(status === 'sent'){
-      actionHtml = `
-        <div class="badge sent">📮 발송됨 → ${memberName(next)}에게 가는 중</div>
-        <button class="btn small" style="margin-top:8px;" onclick="markReceived('${b.id}')">${memberName(next)}, 받았어요! 🙌</button>`;
-    } else {
-      actionHtml = `<div class="badge received">✔ 수령 완료 · 라운드 대기중</div>`;
+    } else { // sent
+      out = `
+        <div class="owner-tag" style="color:${pColor};">📮 보낸 책 · 책지기 ${memberName(outBook.ownerId)}</div>
+        <h3>${outBook.title}</h3>
+        <div class="badge sent">${memberName(nextHolderOf(outBook))}에게 가는 중</div>`;
     }
 
-    const myOwnReviews = myReviews.filter(r=>r.memberId===myId);
-    const editHtml = myOwnReviews.length ? `
-      <button class="btn small secondary" style="margin-top:4px;" onclick="openEditReview('${b.id}')">✏️ 내 한줄평 수정</button>
-      <div id="editform_${b.id}" style="display:none; margin-top:8px;" class="review-box">
-        <select id="eround_${b.id}" onchange="loadEditReview('${b.id}')" style="width:100%; font-family:'Gowun Dodum',sans-serif; font-size:13px; padding:9px 10px; border:1.5px solid var(--border); border-radius:12px; background:#FBFBFE; color:var(--ink); margin-bottom:8px;">
-          ${myOwnReviews.map(r=>`<option value="${r.round}">${r.round+1}회차</option>`).join('')}
-        </select>
-        <div class="stars" id="estars_${b.id}">${[1,2,3,4,5].map(n=>`<span data-n="${n}" onclick="setEditStar('${b.id}',${n})">★</span>`).join('')}</div>
-        <textarea id="etxt_${b.id}"></textarea>
-        <button class="btn small pink" style="margin-top:6px;" onclick="submitEdit('${b.id}')">수정 완료 →</button>
-      </div>` : (myReviews.length && !myId ? `<div class="notice">✏️ 내 한줄평을 수정하려면 위에서 이름을 먼저 선택하세요</div>` : '');
+    let incoming = '';
+    if(inBook){
+      if(inStatus === 'sent'){
+        incoming = `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
+          <div class="owner-tag">📬 받을 책</div>
+          <div style="font-size:14px; font-weight:700;">${inBook.title}</div>
+          <button class="btn small" style="margin-top:6px;" onclick="markReceived('${inBook.id}')">받았어요! 🙌</button>
+        </div>`;
+      } else if(inStatus === 'received'){
+        incoming = `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
+          <div class="badge received">✔ ${inBook.title} 수령 완료 · 라운드 대기중</div>
+        </div>`;
+      }
+    }
 
-    return `<div class="card book" style="border-top-color:${ownerColor};">
-      <div class="owner-tag" style="color:${ownerColor};">✒ 원작자 · ${memberName(b.ownerId)}</div>
-      <h3>${b.title}</h3>
-      ${b.author ? `<div class="author">${b.author}</div>` : ''}
-      <div class="holder-line">지금 여기 있어요: <b style="color:${memberColor(holder)};">${memberName(holder)}</b>${status==='sent'?` (곧 ${memberName(next)}에게)`:''}</div>
-      ${actionHtml}
-      ${myReviews.length? `<div class="badge idle">🔒 한줄평 ${myReviews.length}개 · 전체 라운드 끝나면 공개</div>` : ''}
-      ${editHtml}
+    let mySection = '';
+    if(pid === myId){
+      const myAll = state.reviews.filter(r=>r.memberId===myId);
+      mySection = `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border);">
+        ${myAll.length ? `<div class="badge idle">🔒 내가 쓴 한줄평 ${myAll.length}개 · 전체 라운드 끝나면 공개</div>
+        <button class="btn small secondary" style="margin-top:6px;" onclick="openEditReview()">✏️ 내 한줄평 수정</button>
+        <div id="editform_global" style="display:none; margin-top:8px;" class="review-box">
+          <select id="eround_global" onchange="loadEditReview()" style="width:100%; font-family:'Gowun Dodum',sans-serif; font-size:13px; padding:9px 10px; border:1.5px solid var(--border); border-radius:12px; background:#FBFBFE; color:var(--ink); margin-bottom:8px;">
+            ${myAll.map(r=>{ const bk = config.books.find(x=>x.id===r.bookId); return `<option value="${r.bookId}|${r.round}">${bk.title} · ${r.round+1}회차</option>`; }).join('')}
+          </select>
+          <div class="stars" id="estars_global">${[1,2,3,4,5].map(n=>`<span data-n="${n}" onclick="setEditStar(${n})">★</span>`).join('')}</div>
+          <textarea id="etxt_global"></textarea>
+          <button class="btn small pink" style="margin-top:6px;" onclick="submitEdit()">수정 완료 →</button>
+        </div>` : `<div class="notice">아직 쓴 한줄평이 없어요.</div>`}
+      </div>`;
+    }
+
+    return `<div class="card book" style="border-top-color:${pColor};">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+        <div style="width:32px; height:32px; border-radius:50%; background:${pColor}; color:#fff; display:flex; align-items:center; justify-content:center; font-family:'Jua',sans-serif; font-size:14px; flex-shrink:0;">${memberName(pid)[0]}</div>
+        <div style="font-family:'Jua',sans-serif; font-size:16px; color:${pColor};">${memberName(pid)}</div>
+      </div>
+      ${out}
+      ${incoming}
+      ${mySection}
     </div>`;
   }).join('');
 
@@ -578,7 +597,7 @@ function render(){
       <div class="round-info"><span class="season-chip">${state.seasonNum||1}회차</span> · ${state.round+1} / ${totalRounds} 회차 진행 중 🎈<br>전원이 책을 다 읽고 넘기면 다음 회차로 이동해요.</div>
     </div>
     <div class="rail">${railHtml}</div>
-    <div class="grid">${booksHtml}</div>
+    <div class="grid">${peopleHtml}</div>
     ${allReceived ? `<div class="advance-bar">
         <p>🎉 전원 수령 완료! 다음 라운드로 넘어갈 준비가 되었어요.</p>
         <button class="btn pink" onclick="advanceRound()">다음 라운드 시작 →</button>
@@ -603,7 +622,7 @@ function renderFinished(){
       ${config.books.map(b=>{
         const ownerColor = memberColor(b.ownerId);
         return `<div class="card book" style="border-top-color:${ownerColor};">
-          <div class="owner-tag" style="color:${ownerColor};">✒ 원작자 · ${memberName(b.ownerId)}</div>
+          <div class="owner-tag" style="color:${ownerColor};">✒ 책지기 · ${memberName(b.ownerId)}</div>
           <h3>${b.title}</h3>
           ${bookReviewsHtml(config, state, b)}
         </div>`;
@@ -667,7 +686,7 @@ function renderArchive(){
     const books = a.config.books.map(b=>{
       const ownerColor = memberColor(b.ownerId, a.config);
       return `<div class="card book" style="border-top-color:${ownerColor};">
-        <div class="owner-tag" style="color:${ownerColor};">✒ 원작자 · ${memberName(b.ownerId, a.config)}</div>
+        <div class="owner-tag" style="color:${ownerColor};">✒ 책지기 · ${memberName(b.ownerId, a.config)}</div>
         <h3>${b.title}</h3>
         ${bookReviewsHtml(a.config, a.state, b)}
       </div>`;
@@ -698,11 +717,10 @@ function setStar(bookId, n){
   [...el.children].forEach(s=> s.classList.toggle('on', Number(s.dataset.n) <= n));
 }
 
-async function submitSend(bookId){
+async function submitSend(bookId, who){
   const txt = document.getElementById('txt_'+bookId).value.trim();
   if(!txt){ alert('한줄평을 입력해주세요.'); return; }
   const b = config.books.find(x=>x.id===bookId);
-  const who = document.getElementById('who_'+bookId).value;
   state.reviews.push({bookId, round: state.round, memberId: who, text: txt, rating: draftStars[bookId]||0});
   state.bookStatus[bookId] = 'sent';
   state.history.push({ts: nowStr(), text: `${memberName(who)}님이 "${b.title}"을(를) 다 읽고 ${memberName(nextHolderOf(b))}님에게 보냈어요.`});
@@ -710,36 +728,39 @@ async function submitSend(bookId){
   await saveState();
 }
 
-function openEditReview(bookId){
-  document.getElementById('editform_'+bookId).style.display = 'block';
-  loadEditReview(bookId);
+function openEditReview(){
+  document.getElementById('editform_global').style.display = 'block';
+  loadEditReview();
 }
 
-function loadEditReview(bookId){
-  const sel = document.getElementById('eround_'+bookId);
-  const round = Number(sel.value);
+function loadEditReview(){
+  const sel = document.getElementById('eround_global');
+  const [bookId, roundStr] = sel.value.split('|');
+  const round = Number(roundStr);
   const r = state.reviews.find(x=>x.bookId===bookId && x.round===round);
   if(!r) return;
-  document.getElementById('etxt_'+bookId).value = r.text;
-  const el = document.getElementById('estars_'+bookId);
+  document.getElementById('etxt_global').value = r.text;
+  const el = document.getElementById('estars_global');
   [...el.children].forEach(s=> s.classList.toggle('on', Number(s.dataset.n) <= (r.rating||0)));
-  draftStars[bookId] = r.rating || 0;
+  draftStars['global'] = r.rating || 0;
 }
 
-function setEditStar(bookId, n){
-  draftStars[bookId] = n;
-  const el = document.getElementById('estars_'+bookId);
+function setEditStar(n){
+  draftStars['global'] = n;
+  const el = document.getElementById('estars_global');
   [...el.children].forEach(s=> s.classList.toggle('on', Number(s.dataset.n) <= n));
 }
 
-async function submitEdit(bookId){
-  const round = Number(document.getElementById('eround_'+bookId).value);
-  const txt = document.getElementById('etxt_'+bookId).value.trim();
+async function submitEdit(){
+  const sel = document.getElementById('eround_global');
+  const [bookId, roundStr] = sel.value.split('|');
+  const round = Number(roundStr);
+  const txt = document.getElementById('etxt_global').value.trim();
   if(!txt){ alert('한줄평을 입력해주세요.'); return; }
   const idx = state.reviews.findIndex(r=>r.bookId===bookId && r.round===round);
   if(idx === -1) return;
   state.reviews[idx].text = txt;
-  state.reviews[idx].rating = draftStars[bookId] || 0;
+  state.reviews[idx].rating = draftStars['global'] || 0;
   const b = config.books.find(x=>x.id===bookId);
   state.history.push({ts: nowStr(), text: `${memberName(state.reviews[idx].memberId)}님이 "${b.title}"의 ${round+1}회차 한줄평을 수정했어요.`});
   render();
